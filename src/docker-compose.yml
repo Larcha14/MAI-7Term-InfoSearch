@@ -1,0 +1,116 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: wiki-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD}
+    ports:
+      - "${MYSQL_PORT}:3306"
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --local-infile=1
+      --sql-mode=
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-uroot", "-p${MYSQL_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 25
+
+  bootstrap:
+    user: "${UID}:${GID}"
+    build: ./bootstrap
+    container_name: wiki-bootstrap
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: ${MYSQL_HOST}
+      MYSQL_PORT: ${MYSQL_PORT}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+
+      DUMPS_DIR: /data/dumps
+      EXPORTS_DIR: /data/exports
+      LOG_DIR: /data/logs
+
+      CONFIG_PATH: /config/config.yaml
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./data:/data
+    restart: "no"
+    command: ["python", "/app/init.py"]
+
+  mongo:
+    image: mongo:7
+    container_name: wiki-mongo
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "mongodb://localhost:27017", "--eval", "db.runCommand({ ping: 1 }).ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 25
+
+  crawler:
+    user: "${UID}:${GID}"
+    build: ./crawler
+    container_name: wiki-crawler
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      CONFIG_PATH: /config/config.yaml
+    volumes:
+      - ./config.yaml:/config/config.yaml:ro
+      - ./data:/data
+    restart: "no"
+    command: ["python", "-u", "/app/crawler.py"]
+
+  builder:
+    user: "${UID}:${GID}"
+    build: ./search_engine
+    container_name: wiki-builder
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./data/exports:/exports
+    command: ["./builder"]
+    restart: "no"
+
+  searcher:
+    user: "${UID}:${GID}"
+    build: ./search_engine
+    container_name: wiki-search-engine
+    depends_on:
+      mongo:
+        condition: service_healthy
+    env_file:
+      - .env
+    volumes:
+      - ./data/exports:/exports
+    command: ["sh", "-lc", "while [ ! -f /exports/index.ready ]; do echo 'waiting index...'; sleep 1; done; ./searcher"]
+    stdin_open: true
+    tty: true
+    restart: "no"
+
+  zipf_plot:
+    build:
+      context: ./zipfs_law
+    env_file: .env
+    volumes:
+      - ./data/exports:/exports
+    command: ["python", "/app/plot_zipf.py"]
+
+volumes:
+  mysql_data:
+  mongo_data:

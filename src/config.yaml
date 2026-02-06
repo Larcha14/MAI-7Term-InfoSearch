@@ -1,0 +1,87 @@
+db:
+  type: mongodb
+  uri_env: MONGO_URI          
+  database_env: MONGO_DB
+  collection_env: MONGO_COLLECTION
+  clean_collection_env: MONGO_COLLECTION_CLEAN
+
+logic:
+  delay_sec: 0.8              
+  concurrency: 4
+  per_host_concurrency: 2
+  user_agent: "Arsenii Larchenko"
+  max_unique_docs: 32000      
+  resume: true               
+
+  checkpoint:
+    state_file: "/data/logs/crawler_state.json"
+    flush_every_n: 50 
+
+  recrawl:
+    enabled: true
+    revisit_after_hours: 168
+    only_if_changed: true
+    change_detection:
+      use_etag: true
+      use_last_modified: true
+      use_content_hash: true
+
+normalization:
+  strip_fragment: true        
+  drop_trailing_slash: true
+  lowercase_host: true
+  default_scheme: "https"
+
+sources:
+  - name: "ruwiki"
+    allowed_domains:
+      - "ru.wikipedia.org"
+
+  - name: "ruwikisource"
+    allowed_domains:
+      - "ru.wikisource.org"
+
+storage:
+  document_schema:
+    url: required
+    url_norm: required
+    html: required
+    source_name: required
+    fetched_at_unix: required
+    etag: optional
+    last_modified: optional
+    content_hash: optional
+
+
+bootstrap:
+  wiki_projects: [ruwiki, ruwikisource]
+  dump_resources: ["page", "categorylinks", "linktarget"]
+  download_dumps: true
+  import_dumps: true
+  export_seeds: true
+  seed_category: "Искусство"
+  max_depth: 7
+  seed_limit: 32000
+  bd_attempts_count: 10
+  bd_attempts_dly: 3
+  timeout_sec:
+    connect: 10
+    read: 60
+
+http:
+  timeout_sec:
+    connect: 10
+    read: 60
+  retries:
+    count: 3
+    backoff_sec: 2
+  max_redirects: 5
+  max_response_mb: 25
+  
+seeds:
+  file: "/data/exports/seeds_all_Искусство.tsv"
+  format: "tsv"
+  has_header: true
+  shuffle: true
+  max_per_source: 28000
+
